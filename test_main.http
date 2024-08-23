@@ -1,0 +1,12 @@
+# Test your FastAPI endpoints
+
+GET http://127.0.0.1:8000/
+Accept: application/json
+
+###检查cuda
+
+GET http://127.0.0.1:8000/check_cuda
+Accept: application/json
+
+###获取服务器的硬件信息
+GET http://127.0.0.1:8000/get_hardware_info

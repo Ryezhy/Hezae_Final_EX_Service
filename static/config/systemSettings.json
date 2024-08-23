@@ -1,0 +1,59 @@
+[
+  {
+    "name": "ip地址",
+    "tip": "请输入ip地址",
+    "type": "0",
+    "default": "127.0.0.1:4090",
+    "content": ["127.0.0.1:4090"]
+  },
+  {
+    "name": "模型",
+    "tip": "请选择模型",
+    "type": "1",
+    "default": "默认模型",
+    "content":["默认模型","模型1","模型2"]
+  },
+  {
+    "name": "步长",
+    "tip": "请选择步长",
+    "type": "1",
+    "default": "5",
+    "content": ["5","8","10","15","20"]
+  },
+  {
+    "name": "提示词组",
+    "tip": "请选择提示词组",
+    "type": "1",
+    "default": "默认词组",
+    "content": ["默认词组","自定义词组","其他词组"]
+  },
+   {
+    "name": "Token",
+    "tip": "请输入Token",
+    "type": "0",
+    "default": "1234-bbbb-cccc-d2dc",
+    "content": null
+  },
+  {
+    "name": "移动设备",
+    "tip": "请选择手机类型",
+    "type": "1",
+    "default": "Android",
+    "content": ["Android","Ios"]
+  },
+  {
+    "name":"开启代理",
+    "tip": "请选择是否开启代理",
+    "type": "1",
+    "default": "否",
+    "content": ["是","否"]
+  }
+  ,
+  {
+    "name": "代理地址",
+    "tip": "请输入代理地址",
+    "type": "0",
+    "default": "127.0.0.1:1080",
+    "content": null
+  }
+]
