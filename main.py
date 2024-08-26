@@ -50,83 +50,96 @@ async def check_cuda():
         return JSONResponse({"message": "PyTorch is not installed"})
 
 
-@app.get("/get_hardware_info")
-async def get_hardware_info():
-    try:
-        import psutil
-        import pynvml
-        import torch
+def get_cpu_info():
+    """获取 CPU 信息并返回数组格式"""
+    cpu_count = psutil.cpu_count(logical=False)  # 物理核心数
+    cpu_count_logical = psutil.cpu_count(logical=True)  # 逻辑核心数
+    cpu_percent = psutil.cpu_percent(interval=1)  # 获取过去 1 秒的 CPU 使用率
+    cpu_freq = psutil.cpu_freq()
+    cpu_percents = psutil.cpu_percent(percpu=True, interval=1)  # 每个 CPU 核心的使用率
 
-        # CPU 信息
-        cpu_count = psutil.cpu_count(logical=False)  # 物理核心数
-        cpu_count_logical = psutil.cpu_count(logical=True)  # 逻辑核心数
-        cpu_percent = psutil.cpu_percent(interval=1)  # 获取过去 1 秒的 CPU 使用率
-        cpu_freq = psutil.cpu_freq()
-        cpu_percents = psutil.cpu_percent(percpu=True, interval=1)  # 每个 CPU 核心的使用率
+    return [
+        {"name": "核心数", "value": cpu_count},
+        {"name": "逻辑核心数", "value": cpu_count_logical},
+        {"name": "基准频率", "value": f"{cpu_freq.current / 1000:.2f} GHz"},
+        {"name": "使用率", "value": f"{cpu_percent}%"},
+        {"name": "每个核心使用率", "value":  [f" CPU {i+1}: {percent}%" for i, percent in enumerate(cpu_percents)]}
+    ]
 
+def get_memory_info():
+    """获取内存信息并返回数组格式"""
+    memory = psutil.virtual_memory()
+    memory_total = memory.total / 1024 / 1024 / 1024  # GB
+    memory_used = memory.used / 1024 / 1024 / 1024  # GB
+    memory_free = memory.free / 1024 / 1024 / 1024  # GB
+    memory_percent = memory.percent
+    memory_swap = psutil.swap_memory()
+    memory_swap_total = memory_swap.total / 1024 / 1024 / 1024  # GB
+    memory_swap_used = memory_swap.used / 1024 / 1024 / 1024  # GB
+    memory_swap_free = memory_swap.free / 1024 / 1024 / 1024  # GB
 
-        # 内存信息
-        memory = psutil.virtual_memory()
-        memory_total = memory.total / 1024 / 1024 / 1024  # GB
-        memory_used = memory.used / 1024 / 1024 / 1024  # GB
-        memory_free = memory.free / 1024 / 1024 / 1024  # GB
-        memory_percent = memory.percent
-        memory_swap = psutil.swap_memory()
-        memory_swap_total = memory_swap.total / 1024 / 1024 / 1024  # GB
-        memory_swap_used = memory_swap.used / 1024 / 1024 / 1024  # GB
-        memory_swap_free = memory_swap.free / 1024 / 1024 / 1024  # GB
+    return [
+        {"name": "总容量", "value": f"{memory_total:.2f} GB"},
+        {"name": "已使用", "value": f"{memory_used:.2f} GB"},
+        {"name": "剩余", "value": f"{memory_free:.2f} GB"},
+        {"name": "使用率", "value": f"{memory_percent}%"},
+        {"name": "交换分区总容量", "value": f"{memory_swap_total:.2f} GB"},
+        {"name": "交换分区已使用", "value": f"{memory_swap_used:.2f} GB"},
+        {"name": "交换分区剩余", "value": f"{memory_swap_free:.2f} GB"},
+    ]
 
-        # 显卡信息 (使用 pynvml 和 torch)
-        pynvml.nvmlInit()
+def get_gpu_info():
+    """获取 GPU 信息并返回数组格式"""
+    pynvml.nvmlInit()
+    gpu_count = pynvml.nvmlDeviceGetCount()
+    UNIT = 1024 * 1024
+    gpu_details = []
+    for i in range(gpu_count):
+        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+        memoryInfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        gpuTemperature = pynvml.nvmlDeviceGetTemperature(handle, 0)
+        gpuUtilRate = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
+        gpuMemoryRate = pynvml.nvmlDeviceGetUtilizationRates(handle).memory
+        gpu_name = torch.cuda.get_device_name(i)
 
-        gpu_count = pynvml.nvmlDeviceGetCount()
-        UNIT = 1024 * 1024
-        gpu_details = []
-        for i in range(gpu_count):
-            handle = pynvml.nvmlDeviceGetHandleByIndex(i)
-            memoryInfo = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            gpuTemperature = pynvml.nvmlDeviceGetTemperature(handle, 0)
-            gpuUtilRate = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
-            gpuMemoryRate = pynvml.nvmlDeviceGetUtilizationRates(handle).memory
-            #通过torch获取GPU名字
-            gpu_name = torch.cuda.get_device_name(i)
-            gpu_details.append({
-                "GPU ID": i,
-                "GPU 名称": gpu_name,
-                "内存总容量": f"{memoryInfo.total / UNIT:.2f} MB",
-                "使用容量": f"{memoryInfo.used / UNIT:.2f} MB",
-                "剩余容量": f"{memoryInfo.free / UNIT:.2f} MB",
-                "显存空闲率": f"{memoryInfo.free / memoryInfo.total:.2%}",  # 添加百分号
-                "温度": f"{gpuTemperature} 摄氏度",
-                "GPU 计算核心使用率": f"{gpuUtilRate}%",  # 添加百分号
-                "GPU 内存使用率": f"{gpuMemoryRate}%",  # 添加百分号
-                "内存占用率": f"{memoryInfo.used / memoryInfo.total:.2%}"  # 添加百分号
-            })
-
-        # 构建响应数据
-        body = {
-            "CPU": {
-                "核心数": cpu_count,
-                "逻辑核心数": cpu_count_logical,
-                "基准频率": f"{cpu_freq.current / 1000:.2f} GHz",
-                "使用率": f"{cpu_percent}%",
-                "每个核心使用率": [f"{percent}%" for percent in cpu_percents]
-            },
-            "GPU":
-               gpu_details[0]
-            ,
-            "内存": {
-                "总容量": f"{memory_total:.2f} GB",
-                "已使用": f"{memory_used:.2f} GB",
-                "剩余": f"{memory_free:.2f} GB",
-                "使用率": f"{memory_percent}%",
-                "交换分区总容量": f"{memory_swap_total:.2f} GB",
-                "交换分区已使用": f"{memory_swap_used:.2f} GB",
-                "交换分区剩余": f"{memory_swap_free:.2f} GB",
-            }
+        # 将 GPU 信息存入一个字典
+        gpu_data = {
+            "GPU ID": i,
+            "GPU 名称": gpu_name,
+            "内存总容量": f"{memoryInfo.total / UNIT:.2f} MB",
+            "使用容量": f"{memoryInfo.used / UNIT:.2f} MB",
+            "剩余容量": f"{memoryInfo.free / UNIT:.2f} MB",
+            "显存空闲率": f"{memoryInfo.free / memoryInfo.total:.2%}",  # 添加百分号
+            "温度": f"{gpuTemperature} °C",
+            "GPU 计算核心使用率": f"{gpuUtilRate}%",  # 添加百分号
+            "GPU 内存使用率": f"{gpuMemoryRate}%",  # 添加百分号
+            "内存占用率": f"{memoryInfo.used / memoryInfo.total:.2%}"  # 添加百分号
         }
-        return JSONResponse(body)
+
+        # 将字典转换为 {name: 'GPUID', value: 0} 格式的数组
+        for name, value in gpu_data.items():
+            gpu_details.append({"name": name, "value": value})
+
+    # 返回数组
+    return gpu_details
+
+@app.get("/get_hardware_info")
+async def get_hardware_info(hardware: str):
+    """获取硬件信息，通过 get 参数 `hardware` 指定硬件类型"""
+    try:
+        if hardware == "cpu":
+            return JSONResponse(get_cpu_info())
+        elif hardware == "memory":
+            return JSONResponse(get_memory_info())
+        elif hardware == "gpu":
+            return JSONResponse(get_gpu_info())
+        else:
+            return JSONResponse({"message": "无效的硬件类型"}, status_code=400)
 
     except ImportError:
-        print("psutil 或 pynvml 未安装")
-        return JSONResponse({"message": "psutil 或 pynvml 未安装"})
+        if hardware == "cpu" or hardware == "memory":
+            print("psutil 未安装")
+            return JSONResponse({"message": "psutil 未安装"})
+        elif hardware == "gpu":
+            print("pynvml 或 torch 未安装")
+            return JSONResponse({"message": "pynvml 或 torch 未安装"})
