@@ -1,31 +1,94 @@
+from datetime import timedelta
+from http.client import HTTPException
 from urllib.request import Request
 
 from conda.plugins.virtual_packages.cuda import cuda_version
 from fastapi import FastAPI, Depends
+from minio import Minio, S3Error
+from pandas import Timedelta
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker,Session
-from starlette.responses import JSONResponse
+from sqlalchemy.orm import sessionmaker, Session
+from starlette.responses import JSONResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
 from starlette.status import HTTP_400_BAD_REQUEST
 from model import User
-import pynvml #导包
+import pynvml  #导包
 import psutil
 import torch
+
 app = FastAPI()
 # 创建一个 StaticFiles 实例，指定静态文件目录
 static_files = StaticFiles(directory="static")
 app.mount("/static", static_files)
+
+
+# MinIO 客户端配置
+minio_client = Minio(
+    "127.0.0.1:9015",
+    access_key="admin",
+    secret_key="admin841755",
+    secure=False  # 如果使用 HTTPS，则设置为 True
+)
+
+# 要查询的存储桶名称
+bucket_name = "main"
+
+
+@app.get("/files/")
+async def list_files():
+    try:
+        # 获取存储桶中的对象列表
+        objects = minio_client.list_objects(bucket_name)
+
+        # 格式化文件列表
+        file_list = [obj.object_name for obj in objects]
+
+        return {"files": file_list}
+    except S3Error as e:
+        raise HTTPException()
+
+
+@app.get("/download/{file_name}")
+async def download_file(file_name: str):
+    try:
+        # 获取文件对象和元数据
+        file_obj = minio_client.get_object(bucket_name, file_name)
+        file_stat = minio_client.stat_object(bucket_name, file_name)
+        file_size = file_stat.size
+
+        # 构造头部,包含文件名和文件大小
+        headers = {
+            'Content-Disposition': f'attachment; filename={file_name}; size={file_size}',
+            "Content-Length": f"{file_size}"
+        }
+
+        # 返回 StreamingResponse
+        return StreamingResponse(
+            file_obj.stream(),
+            media_type="application/octet-stream",
+            headers=headers
+        )
+
+    except S3Error as e:
+        if e.code == "NoSuchKey":
+            return JSONResponse({"message": "文件不存在"}, status_code=404)
+        else:
+            raise HTTPException()
+
+
 @app.middleware("http")
 async def allow_origin(request: Request, call_next):
     response = await call_next(request)
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
+
 @app.get("/")
 async def get():
     #在静态文件中读取json
     return JSONResponse({"message": "Hello World"})
+
 
 #检查支不支持cuda
 @app.get("/check_cuda")
@@ -38,10 +101,11 @@ async def check_cuda():
             print("GPU name:", gpu_name)
             cuda_versions = torch.version.cuda
             print("CUDA version:", cuda_versions)
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory/1024**3
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
             gpu_memory = round(gpu_memory, 2)
-            print("Memory:", gpu_memory,'GB')
-            return JSONResponse({"message": "CUDA is available", "gpu_name": gpu_name, "cuda_version": cuda_versions, "gpu_memory": f"{gpu_memory}GB"})
+            print("Memory:", gpu_memory, 'GB')
+            return JSONResponse({"message": "CUDA is available", "gpu_name": gpu_name, "cuda_version": cuda_versions,
+                                 "gpu_memory": f"{gpu_memory}GB"})
         else:
             print("CUDA is not available")
             return JSONResponse({"message": "CUDA is not available"})
@@ -63,8 +127,9 @@ def get_cpu_info():
         {"name": "逻辑核心数", "value": cpu_count_logical},
         {"name": "基准频率", "value": f"{cpu_freq.current / 1000:.2f} GHz"},
         {"name": "使用率", "value": f"{cpu_percent}%"},
-        {"name": "每个核心使用率", "value":  [f" CPU {i+1}: {percent}%" for i, percent in enumerate(cpu_percents)]}
+        {"name": "每个核心使用率", "value": [f" CPU {i + 1}: {percent}%" for i, percent in enumerate(cpu_percents)]}
     ]
+
 
 def get_memory_info():
     """获取内存信息并返回数组格式"""
@@ -87,6 +152,7 @@ def get_memory_info():
         {"name": "交换分区已使用", "value": f"{memory_swap_used:.2f} GB"},
         {"name": "交换分区剩余", "value": f"{memory_swap_free:.2f} GB"},
     ]
+
 
 def get_gpu_info():
     """获取 GPU 信息并返回数组格式"""
@@ -122,6 +188,7 @@ def get_gpu_info():
 
     # 返回数组
     return gpu_details
+
 
 @app.get("/get_hardware_info")
 async def get_hardware_info(hardware: str):
