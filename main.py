@@ -1,18 +1,11 @@
-from datetime import timedelta
 from http.client import HTTPException
 from urllib.request import Request
 
-from conda.plugins.virtual_packages.cuda import cuda_version
 from fastapi import FastAPI, Depends
 from minio import Minio, S3Error
-from pandas import Timedelta
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+
 from starlette.responses import JSONResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
-from starlette.status import HTTP_400_BAD_REQUEST
-from model import User
 import pynvml  #导包
 import psutil
 import torch
